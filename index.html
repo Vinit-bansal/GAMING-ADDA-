@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Respawn Console · Cafe Manager</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%236C4FF6%22/><text x=%2250%22 y=%2268%22 font-size=%2260%22 text-anchor=%22middle%22 fill=%22white%22>R</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ===================== ENTRY OVERLAY (name + PIN — PIN decides admin vs staff) ===================== -->
+<div id="loginScreen" class="login-screen">
+  <div class="login-card">
+    <div class="login-mark">R</div>
+    <h1>Respawn Console</h1>
+    <p class="login-sub">Cafe booking &amp; revenue board</p>
+    <form id="loginForm">
+      <label>Your name <span style="color:var(--text-faint)">(shown on anything you add or change)</span>
+        <input type="text" id="staffName" required placeholder="e.g. Rahul">
+      </label>
+      <label>Access code
+        <input type="text" id="staffPin" required placeholder="Owner or staff PIN">
+      </label>
+      <button type="submit" class="btn btn-primary btn-block">Continue</button>
+      <p id="loginError" class="form-error"></p>
+    </form>
+    <p class="login-hint">The PIN you enter decides what you can see — owners' PIN unlocks Revenue too.</p>
+  </div>
+</div>
+
+<!-- ===================== APP SHELL ===================== -->
+<div id="app" class="app hidden">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">R</span>
+      <span class="brand-name">Respawn Console</span>
+    </div>
+    <div class="topbar-center">
+      <span id="liveClock" class="live-clock">--:--:--</span>
+      <span id="connStatus" class="conn-dot" title="Connection status"></span>
+    </div>
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="board">Board</button>
+      <button class="tab-btn" data-tab="schedule">Schedule</button>
+      <button class="tab-btn" data-tab="revenue" data-admin-only="true">Revenue</button>
+      <button class="tab-btn" data-tab="beverages">Beverages</button>
+      <button class="tab-btn" data-tab="log" data-admin-only="true">Log</button>
+    </nav>
+    <div class="topbar-right">
+      <span id="whoami" class="whoami"></span>
+      <button id="logoutBtn" class="btn btn-ghost btn-sm">Sign out</button>
+    </div>
+  </header>
+
+  <!-- Time's up alert strip -->
+  <div id="alertStrip" class="alert-strip hidden"></div>
+
+  <main class="main">
+
+    <!-- ---------- BOARD (live entity status) ---------- -->
+    <section id="tab-board" class="tab-panel active">
+      <div class="panel-head">
+        <h2>Live board</h2>
+        <p class="panel-sub">Tap a station to start a walk-in session or book a future slot.</p>
+      </div>
+      <div id="entityGrid" class="entity-grid"></div>
+    </section>
+
+    <!-- ---------- SCHEDULE ---------- -->
+    <section id="tab-schedule" class="tab-panel">
+      <div class="panel-head panel-head-row">
+        <div>
+          <h2>Schedule</h2>
+          <p class="panel-sub">Every booking, current and upcoming, for all owners to see.</p>
+        </div>
+        <div class="panel-actions">
+          <input type="date" id="scheduleDate" class="input">
+          <button id="scheduleTodayBtn" class="btn btn-ghost btn-sm">Today</button>
+        </div>
+      </div>
+      <div id="scheduleList" class="schedule-list"></div>
+    </section>
+
+    <!-- ---------- REVENUE (owners only) ---------- -->
+    <section id="tab-revenue" class="tab-panel">
+      <div class="panel-head panel-head-row">
+        <div>
+          <h2>Revenue</h2>
+          <p class="panel-sub">Station income and beverage income, combined and separate.</p>
+        </div>
+        <div class="panel-actions">
+          <input type="date" id="revenueDate" class="input">
+          <input type="month" id="revenueMonth" class="input">
+        </div>
+      </div>
+
+      <div class="revenue-grid">
+        <div class="rev-card rev-card-big">
+          <span class="rev-label">Today · total</span>
+          <span id="dayTotal" class="rev-amount">₹0</span>
+          <div class="rev-split">
+            <span>Stations <b id="dayEntity">₹0</b></span>
+            <span>Beverages <b id="dayBev">₹0</b></span>
+          </div>
+        </div>
+        <div class="rev-card rev-card-big">
+          <span class="rev-label">This month · total</span>
+          <span id="monthTotal" class="rev-amount">₹0</span>
+          <div class="rev-split">
+            <span>Stations <b id="monthEntity">₹0</b></span>
+            <span>Beverages <b id="monthBev">₹0</b></span>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="sub-heading">Completed sessions — selected day</h3>
+      <div id="revenueSessionsList" class="revenue-table"></div>
+    </section>
+
+    <!-- ---------- BEVERAGES ---------- -->
+    <section id="tab-beverages" class="tab-panel">
+      <div class="panel-head panel-head-row">
+        <div>
+          <h2>Beverages</h2>
+          <p class="panel-sub">Every drink/snack sale — standalone or added to a table mid-session — lives here, separate from station income.</p>
+        </div>
+        <button id="addBeverageBtn" class="btn btn-primary btn-sm">+ Log sale</button>
+      </div>
+      <div id="beverageList" class="beverage-list"></div>
+    </section>
+
+    <!-- ---------- ACTIVITY LOG (owners only) ---------- -->
+    <section id="tab-log" class="tab-panel">
+      <div class="panel-head">
+        <h2>Activity log</h2>
+        <p class="panel-sub">Every edit and deletion, with who did it and when. The same log is saved permanently in the "ActivityLog" tab of your Google Sheet.</p>
+      </div>
+      <div id="logList" class="schedule-list"></div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ===================== MODALS ===================== -->
+
+<!-- Start / Book session modal -->
+<div id="sessionModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="sessionModalTitle">Start session</h3>
+      <button class="modal-close" data-close="sessionModal">&times;</button>
+    </div>
+    <form id="sessionForm">
+      <input type="hidden" id="sessionEntityId">
+      <div class="modal-tabs">
+        <button type="button" class="modal-tab-btn active" data-mode="now">Walk-in now</button>
+        <button type="button" class="modal-tab-btn" data-mode="later">Book for later</button>
+      </div>
+
+      <label>Client name
+        <input type="text" id="clientName" required placeholder="e.g. Rohan">
+      </label>
+      <label>Phone (optional)
+        <input type="tel" id="clientPhone" placeholder="10-digit number">
+      </label>
+
+      <div id="laterFields" class="hidden">
+        <label>Date
+          <input type="date" id="bookingDate">
+        </label>
+        <label>Start time
+          <input type="time" id="bookingTime">
+        </label>
+      </div>
+
+      <div class="duration-row">
+        <label class="grow">Number of players
+          <input type="number" min="1" id="sessionPlayers" value="1" required>
+        </label>
+        <label class="grow">Duration
+          <select id="durationSelect">
+            <option value="30">30 min</option>
+            <option value="60" selected>1 hour</option>
+            <option value="90">1.5 hours</option>
+            <option value="120">2 hours</option>
+            <option value="180">3 hours</option>
+            <option value="open">Open — run a stopwatch instead</option>
+          </select>
+        </label>
+      </div>
+
+      <label>Amount (₹) <span style="color:var(--text-faint)">— optional, you can also set this when the session ends</span>
+        <input type="number" min="0" id="sessionAmount" placeholder="e.g. 300 for the group offer">
+      </label>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close="sessionModal">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="sessionSubmitBtn">Start now</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Stop / end session modal -->
+<div id="endModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Stop session</h3>
+      <button class="modal-close" data-close="endModal">&times;</button>
+    </div>
+    <form id="endForm">
+      <input type="hidden" id="endSessionId">
+      <p id="endSummary" class="end-summary"></p>
+      <label>Final amount (₹) — edit if needed
+        <input type="number" min="0" id="endAmount" required>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="endAddBeverage">
+        Add one more beverage sale for this table before closing
+      </label>
+      <div id="endBeverageFields" class="hidden">
+        <label>Beverage description
+          <input type="text" id="endBevDesc" placeholder="e.g. 2 Cold drinks, 1 Maggi">
+        </label>
+        <label>Beverage amount (₹)
+          <input type="number" min="0" id="endBevAmount">
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close="endModal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Stop &amp; save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Beverage modal — used both for standalone sales AND for ordering mid-session from a station card -->
+<div id="bevModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="bevModalTitle">Log a beverage sale</h3>
+      <button class="modal-close" data-close="bevModal">&times;</button>
+    </div>
+    <form id="bevForm">
+      <input type="hidden" id="bevLinkedSessionId">
+      <label>Description
+        <input type="text" id="bevDesc" required placeholder="e.g. 3 Cold drinks">
+      </label>
+      <label>Amount (₹)
+        <input type="number" min="0" id="bevAmount" required>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close="bevModal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save sale</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Edit beverage modal -->
+<div id="editBevModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Edit beverage sale</h3>
+      <button class="modal-close" data-close="editBevModal">&times;</button>
+    </div>
+    <form id="editBevForm">
+      <input type="hidden" id="editBevId">
+      <label>Description
+        <input type="text" id="editBevDesc" required>
+      </label>
+      <label>Amount (₹)
+        <input type="number" min="0" id="editBevAmount" required>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close="editBevModal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Edit session modal — change any detail of a booking, at any stage -->
+<div id="editModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Edit booking</h3>
+      <button class="modal-close" data-close="editModal">&times;</button>
+    </div>
+    <form id="editForm">
+      <input type="hidden" id="editSessionId">
+      <label>Client name
+        <input type="text" id="editClientName" required>
+      </label>
+      <label>Phone
+        <input type="tel" id="editClientPhone">
+      </label>
+      <div class="duration-row">
+        <label class="grow">Number of players
+          <input type="number" min="1" id="editPlayers" required>
+        </label>
+        <label class="grow">Duration (minutes) <span style="color:var(--text-faint)">— blank = open</span>
+          <input type="number" min="0" id="editDuration" placeholder="blank = open stopwatch">
+        </label>
+      </div>
+      <label>Amount (₹)
+        <input type="number" min="0" id="editAmount" placeholder="leave blank if not decided yet">
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close="editModal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Receipt — shown right after a session is stopped -->
+<div id="receiptModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Session complete</h3>
+      <button class="modal-close" data-close="receiptModal">&times;</button>
+    </div>
+    <div id="receiptBody" class="end-summary" style="display:flex; flex-direction:column; gap:10px;"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-primary" data-close="receiptModal">Done</button>
+    </div>
+  </div>
+</div>
+
+<audio id="alarmSound" preload="auto" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg"></audio>
+
+<script src="js/config.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
